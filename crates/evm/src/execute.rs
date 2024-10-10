@@ -188,7 +188,7 @@ pub trait BlockExecutionStrategy<DB> {
     fn with_state_hook(&mut self, hook: Option<Box<dyn OnStateHook>>);
 
     /// Returns the final bundle state.
-    fn finish(&self) -> BundleState;
+    fn finish(&mut self) -> BundleState;
 }
 
 /// A strategy factory that can create block execution strategies.
@@ -549,7 +549,7 @@ mod tests {
 
         fn with_state_hook(&mut self, _hook: Option<Box<dyn OnStateHook>>) {}
 
-        fn finish(&self) -> BundleState {
+        fn finish(&mut self) -> BundleState {
             self.finish_result.clone()
         }
     }
