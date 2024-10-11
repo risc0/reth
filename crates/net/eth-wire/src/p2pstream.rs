@@ -549,7 +549,11 @@ where
             }
         }
 
-        match this.inner.poll_ready_unpin(cx) {
+        let inner = this.inner.poll_ready_unpin(cx);
+
+        trace!(target: "net::p2p", ?inner, "inner poll_ready P2PStream");
+
+        match inner {
             Poll::Pending => {}
             Poll::Ready(Err(err)) => return Poll::Ready(Err(P2PStreamError::Io(err))),
             Poll::Ready(Ok(())) => {
@@ -608,11 +612,14 @@ where
         compressed[0] = item[0] + MAX_RESERVED_MESSAGE_ID + 1;
         this.outgoing_messages.push_back(compressed.freeze());
 
+        trace!(target: "net::p2p", outgoing=?this.outgoing_messages, "queued message for sending");
+
         Ok(())
     }
 
     /// Returns `Poll::Ready(Ok(()))` when no buffered items remain.
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        trace!(target: "net::p2p", "poll_flush P2PStream");
         let mut this = self.project();
         loop {
             match ready!(this.inner.as_mut().poll_flush(cx)) {
@@ -627,6 +634,7 @@ where
                     let Some(message) = this.outgoing_messages.pop_front() else {
                         return Poll::Ready(Ok(()))
                     };
+                    trace!(target: "net::p2p", "sending message to inner sink");
                     if let Err(err) = this.inner.as_mut().start_send(message) {
                         return Poll::Ready(Err(err.into()))
                     }
