@@ -434,6 +434,7 @@ where
         origin: TransactionOrigin,
         tx: TransactionValidationOutcome<T::Transaction>,
     ) -> PoolResult<TxHash> {
+        trace!(target: "txpool", ?tx, "adding transaction to pool");
         match tx {
             TransactionValidationOutcome::Valid {
                 balance,
@@ -531,6 +532,7 @@ where
         origin: TransactionOrigin,
         transactions: impl IntoIterator<Item = TransactionValidationOutcome<T::Transaction>>,
     ) -> Vec<PoolResult<TxHash>> {
+        trace!(target: "txpool", "adding transactions to pool");
         let mut added =
             transactions.into_iter().map(|tx| self.add_transaction(origin, tx)).collect::<Vec<_>>();
 

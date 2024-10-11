@@ -1072,6 +1072,7 @@ where
                 let tx_manager_info_pending_pool_imports =
                     self.pending_pool_imports_info.pending_pool_imports.clone();
 
+                trace!(target: "net::tx::propagation", ?new_txs, "new transactions");
                 trace!(target: "net::tx::propagation", new_txs_len=?new_txs.len(), "Importing new transactions");
                 let import = Box::pin(async move {
                     let added = new_txs.len();
@@ -1269,6 +1270,7 @@ where
         // this can potentially validate >200k transactions. More if the message size
         // is bigger than the soft limit on a `PooledTransactions` response which is
         // 2 MiB (`Transactions` broadcast messages is smaller, 128 KiB).
+        trace!(target: "net::tx", "Polling pool imports");
         let maybe_more_pool_imports = metered_poll_nested_stream_with_budget!(
             poll_durations.acc_pending_imports,
             "net::tx",
