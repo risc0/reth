@@ -262,7 +262,6 @@ mod tests {
     use super::*;
     use alloy_consensus::TxLegacy;
     use alloy_eips::{
-        eip2935::{HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE},
         eip4788::{BEACON_ROOTS_ADDRESS, BEACON_ROOTS_CODE},
         eip7002::{WITHDRAWAL_REQUEST_PREDEPLOY_ADDRESS, WITHDRAWAL_REQUEST_PREDEPLOY_CODE},
     };
@@ -319,10 +318,8 @@ mod tests {
     fn executor_provider(
         chain_spec: Arc<ChainSpec>,
     ) -> GenericBlockExecutorProvider<EthExecutionStrategyFactory> {
-        let strategy_factory = EthExecutionStrategyFactory::new(
-            chain_spec.clone(),
-            EthEvmConfig::new(chain_spec.clone()),
-        );
+        let strategy_factory =
+            EthExecutionStrategyFactory::new(chain_spec.clone(), EthEvmConfig::new(chain_spec));
 
         GenericBlockExecutorProvider::new(strategy_factory)
     }
@@ -376,7 +373,7 @@ mod tests {
         // fix header, set a gas limit
         header.parent_beacon_block_root = Some(B256::with_last_byte(0x69));
 
-        let mut executor = provider.executor(StateProviderDatabase::new(&db));
+        let executor = provider.executor(StateProviderDatabase::new(&db));
 
         // Now execute a block with the fixed header, ensure that it does not fail
         executor
@@ -407,7 +404,7 @@ mod tests {
         //   // should be parent_beacon_block_root
         let history_buffer_length = 8191u64;
         let timestamp_index = header.timestamp % history_buffer_length;
-        let parent_beacon_block_root_index =
+        let _parent_beacon_block_root_index =
             timestamp_index % history_buffer_length + history_buffer_length;
 
         // TODO: get timestamp storage and compare
@@ -665,7 +662,6 @@ mod tests {
             .unwrap();
         assert_eq!(parent_beacon_block_root_storage, U256::from(0x69));
     }
-     */
 
     /// Create a state provider with blockhashes and the EIP-2935 system contract.
     fn create_state_provider_with_block_hashes(latest_block: u64) -> StateProviderTest {
@@ -689,8 +685,6 @@ mod tests {
 
         db
     }
-
-    /*
         #[test]
         fn eip_2935_pre_fork() {
             let db = create_state_provider_with_block_hashes(1);
