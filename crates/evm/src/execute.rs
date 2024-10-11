@@ -169,7 +169,11 @@ pub trait BlockExecutionStrategy<DB> {
     type Error: From<ProviderError> + core::error::Error;
 
     /// Applies any necessary changes before executing the block's transactions.
-    fn apply_pre_execution_changes(&mut self, block: &BlockWithSenders) -> Result<(), Self::Error>;
+    fn apply_pre_execution_changes(
+        &mut self,
+        block: &BlockWithSenders,
+        total_difficulty: U256,
+    ) -> Result<(), Self::Error>;
 
     /// Executes all transactions in the block.
     fn execute_transactions(
@@ -294,7 +298,7 @@ where
 
         let mut strategy = self.strategy.borrow_mut();
 
-        strategy.apply_pre_execution_changes(block)?;
+        strategy.apply_pre_execution_changes(block, total_difficulty)?;
         let (receipts, gas_used) = strategy.execute_transactions(block, total_difficulty)?;
         let requests = strategy.apply_post_execution_changes(block, total_difficulty, &receipts)?;
         let state = strategy.finish();
@@ -314,7 +318,7 @@ where
 
         let mut strategy = self.strategy.borrow_mut();
 
-        strategy.apply_pre_execution_changes(block)?;
+        strategy.apply_pre_execution_changes(block, total_difficulty)?;
         let (receipts, gas_used) = strategy.execute_transactions(block, total_difficulty)?;
         let requests = strategy.apply_post_execution_changes(block, total_difficulty, &receipts)?;
 
@@ -339,7 +343,7 @@ where
 
         strategy.with_state_hook(Some(Box::new(state_hook)));
 
-        strategy.apply_pre_execution_changes(block)?;
+        strategy.apply_pre_execution_changes(block, total_difficulty)?;
         let (receipts, gas_used) = strategy.execute_transactions(block, total_difficulty)?;
         let requests = strategy.apply_post_execution_changes(block, total_difficulty, &receipts)?;
 
@@ -536,6 +540,7 @@ mod tests {
         fn apply_pre_execution_changes(
             &mut self,
             _block: &BlockWithSenders,
+            _total_difficulty: U256,
         ) -> Result<(), Self::Error> {
             Ok(())
         }

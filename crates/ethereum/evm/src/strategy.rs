@@ -120,11 +120,20 @@ where
 {
     type Error = BlockExecutionError;
 
-    fn apply_pre_execution_changes(&mut self, block: &BlockWithSenders) -> Result<(), Self::Error> {
+    fn apply_pre_execution_changes(
+        &mut self,
+        block: &BlockWithSenders,
+        total_difficulty: U256,
+    ) -> Result<(), Self::Error> {
         // Set state clear flag if the block is after the Spurious Dragon hardfork.
         let state_clear_flag =
             (*self.chain_spec).is_spurious_dragon_active_at_block(block.header.number);
         self.state.set_state_clear_flag(state_clear_flag);
+
+        let env = self.evm_env_for_block(&block.header, total_difficulty);
+        let mut evm = self.evm_config.evm_with_env(&mut self.state, env);
+
+        self.system_caller.apply_pre_execution_changes(block, &mut evm)?;
 
         Ok(())
     }
