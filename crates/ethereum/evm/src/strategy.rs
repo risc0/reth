@@ -67,7 +67,9 @@ pub struct EthExecutionStrategy<DB, EvmConfig = EthEvmConfig> {
     chain_spec: Arc<ChainSpec>,
     /// How to create an EVM.
     evm_config: EvmConfig,
+    /// Current state for block execution.
     state: State<DB>,
+    /// Optional hook to send state updates.
     state_hook: Option<Box<dyn OnStateHook>>,
 }
 
