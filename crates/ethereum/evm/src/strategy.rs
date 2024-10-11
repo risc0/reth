@@ -1,8 +1,11 @@
 //! Ethereum block execution strategy,
 
-use crate::EthEvmConfig;
+use crate::{
+    dao_fork::{DAO_HARDFORK_BENEFICIARY, DAO_HARDKFORK_ACCOUNTS},
+    EthEvmConfig,
+};
 use core::fmt::Display;
-use reth_chainspec::{ChainSpec, MAINNET};
+use reth_chainspec::{ChainSpec, EthereumHardfork, EthereumHardforks, MAINNET};
 use reth_evm::{
     execute::{
         BlockExecutionError, BlockExecutionStrategy, BlockExecutionStrategyFactory,
@@ -11,16 +14,17 @@ use reth_evm::{
     system_calls::{OnStateHook, SystemCaller},
     ConfigureEvm, ConfigureEvmEnv,
 };
-use reth_primitives::{Header, Receipt, Request};
+use reth_primitives::{BlockWithSenders, Header, Receipt, Request};
 use reth_revm::{
     db::{states::bundle_state::BundleRetention, BundleState},
+    state_change::post_block_balance_increments,
     Database, DatabaseCommit, Evm, State,
 };
 use revm_primitives::{BlockEnv, CfgEnvWithHandlerCfg, EnvWithHandlerCfg, ResultAndState, U256};
 use std::sync::Arc;
 
 /// Factory for [`EthExecutionStrategy`].
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct EthExecutionStrategyFactory<EvmConfig = EthEvmConfig> {
     /// The chainspec
     chain_spec: Arc<ChainSpec>,
@@ -69,14 +73,15 @@ pub struct EthExecutionStrategy<DB, EvmConfig = EthEvmConfig> {
     evm_config: EvmConfig,
     /// Current state for block execution.
     state: State<DB>,
-    /// Optional hook to send state updates.
-    state_hook: Option<Box<dyn OnStateHook>>,
+    /// Utility to call system smart contracts.
+    system_caller: SystemCaller<EvmConfig, ChainSpec>,
 }
 
 impl<DB> EthExecutionStrategy<DB> {
     /// Creates a new [`EthExecutionStrategy`]
     pub fn new(state: State<DB>, chain_spec: Arc<ChainSpec>, evm_config: EthEvmConfig) -> Self {
-        Self { state, chain_spec, evm_config, state_hook: None }
+        let system_caller = SystemCaller::new(evm_config.clone(), (*chain_spec).clone());
+        Self { state, chain_spec, evm_config, system_caller }
     }
 }
 
@@ -115,20 +120,23 @@ where
 {
     type Error = BlockExecutionError;
 
-    fn apply_pre_execution_changes(&mut self) -> Result<(), Self::Error> {
-        todo!()
+    fn apply_pre_execution_changes(&mut self, block: &BlockWithSenders) -> Result<(), Self::Error> {
+        // Set state clear flag if the block is after the Spurious Dragon hardfork.
+        let state_clear_flag =
+            (*self.chain_spec).is_spurious_dragon_active_at_block(block.header.number);
+        self.state.set_state_clear_flag(state_clear_flag);
+
+        Ok(())
     }
 
     fn execute_transactions(
         &mut self,
-        block: &reth_primitives::BlockWithSenders,
+        block: &BlockWithSenders,
         total_difficulty: U256,
     ) -> Result<(Vec<Receipt>, u64), Self::Error> {
         let env = self.evm_env_for_block(&block.header, total_difficulty);
         let mut evm = self.evm_config.evm_with_env(&mut self.state, env);
 
-        let evm_config = self.evm_config.clone();
-        let mut system_caller = SystemCaller::new(&evm_config, (*self.chain_spec).clone());
         let mut cumulative_gas_used = 0;
         let mut receipts = Vec::with_capacity(block.body.transactions.len());
         for (sender, transaction) in block.transactions_with_sender() {
@@ -154,7 +162,7 @@ where
                     error: Box::new(new_err),
                 }
             })?;
-            system_caller.on_state(&result_and_state);
+            self.system_caller.on_state(&result_and_state);
             let ResultAndState { result, state } = result_and_state;
             evm.db_mut().commit(state);
 
@@ -179,8 +187,51 @@ where
         Ok((receipts, cumulative_gas_used))
     }
 
-    fn apply_post_execution_changes(&mut self) -> Result<Vec<Request>, Self::Error> {
-        todo!()
+    fn apply_post_execution_changes(
+        &mut self,
+        block: &BlockWithSenders,
+        total_difficulty: U256,
+        receipts: &[Receipt],
+    ) -> Result<Vec<Request>, Self::Error> {
+        let env = self.evm_env_for_block(&block.header, total_difficulty);
+        let mut evm = self.evm_config.evm_with_env(&mut self.state, env);
+
+        let requests = if self.chain_spec.is_prague_active_at_timestamp(block.timestamp) {
+            // Collect all EIP-6110 deposits
+            let deposit_requests =
+                crate::eip6110::parse_deposits_from_receipts(&self.chain_spec, receipts)?;
+
+            let post_execution_requests =
+                self.system_caller.apply_post_execution_changes(&mut evm)?;
+
+            [deposit_requests, post_execution_requests].concat()
+        } else {
+            vec![]
+        };
+        drop(evm);
+
+        let mut balance_increments =
+            post_block_balance_increments(&self.chain_spec, block, total_difficulty);
+
+        // Irregular state change at Ethereum DAO hardfork
+        if self.chain_spec.fork(EthereumHardfork::Dao).transitions_at_block(block.number) {
+            // drain balances from hardcoded addresses.
+            let drained_balance: u128 = self
+                .state
+                .drain_balances(DAO_HARDKFORK_ACCOUNTS)
+                .map_err(|_| BlockValidationError::IncrementBalanceFailed)?
+                .into_iter()
+                .sum();
+
+            // return balance to DAO beneficiary.
+            *balance_increments.entry(DAO_HARDFORK_BENEFICIARY).or_default() += drained_balance;
+        }
+        // increment balances
+        self.state
+            .increment_balances(balance_increments)
+            .map_err(|_| BlockValidationError::IncrementBalanceFailed)?;
+
+        Ok(requests)
     }
 
     fn state_ref(&self) -> &State<DB> {
@@ -188,7 +239,7 @@ where
     }
 
     fn with_state_hook(&mut self, hook: Option<Box<dyn OnStateHook>>) {
-        self.state_hook = hook;
+        self.system_caller.with_state_hook(hook);
     }
 
     fn finish(&mut self) -> BundleState {

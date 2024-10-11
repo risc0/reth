@@ -7,6 +7,7 @@ pub use reth_execution_errors::{
 pub use reth_execution_types::{BlockExecutionInput, BlockExecutionOutput, ExecutionOutcome};
 pub use reth_storage_errors::provider::ProviderError;
 
+use crate::system_calls::OnStateHook;
 use alloc::{boxed::Box, vec::Vec};
 use alloy_primitives::BlockNumber;
 use core::{cell::RefCell, fmt::Display, marker::PhantomData};
@@ -14,8 +15,6 @@ use reth_primitives::{BlockWithSenders, Receipt, Request};
 use reth_prune_types::PruneModes;
 use revm::{db::BundleState, State};
 use revm_primitives::{db::Database, U256};
-
-use crate::system_calls::OnStateHook;
 
 /// A general purpose executor trait that executes an input (e.g. block) and produces an output
 /// (e.g. state changes and receipts).
@@ -170,7 +169,7 @@ pub trait BlockExecutionStrategy<DB> {
     type Error: From<ProviderError> + core::error::Error;
 
     /// Applies any necessary changes before executing the block's transactions.
-    fn apply_pre_execution_changes(&mut self) -> Result<(), Self::Error>;
+    fn apply_pre_execution_changes(&mut self, block: &BlockWithSenders) -> Result<(), Self::Error>;
 
     /// Executes all transactions in the block.
     fn execute_transactions(
@@ -180,7 +179,12 @@ pub trait BlockExecutionStrategy<DB> {
     ) -> Result<(Vec<Receipt>, u64), Self::Error>;
 
     /// Applies any necessary changes after executing the block's transactions.
-    fn apply_post_execution_changes(&mut self) -> Result<Vec<Request>, Self::Error>;
+    fn apply_post_execution_changes(
+        &mut self,
+        block: &BlockWithSenders,
+        total_difficulty: U256,
+        receipts: &[Receipt],
+    ) -> Result<Vec<Request>, Self::Error>;
 
     /// Returns a reference to the current state.
     fn state_ref(&self) -> &State<DB>;
@@ -290,9 +294,9 @@ where
 
         let mut strategy = self.strategy.borrow_mut();
 
-        strategy.apply_pre_execution_changes()?;
+        strategy.apply_pre_execution_changes(block)?;
         let (receipts, gas_used) = strategy.execute_transactions(block, total_difficulty)?;
-        let requests = strategy.apply_post_execution_changes()?;
+        let requests = strategy.apply_post_execution_changes(block, total_difficulty, &receipts)?;
         let state = strategy.finish();
 
         Ok(BlockExecutionOutput { state, receipts, requests, gas_used })
@@ -310,9 +314,9 @@ where
 
         let mut strategy = self.strategy.borrow_mut();
 
-        strategy.apply_pre_execution_changes()?;
+        strategy.apply_pre_execution_changes(block)?;
         let (receipts, gas_used) = strategy.execute_transactions(block, total_difficulty)?;
-        let requests = strategy.apply_post_execution_changes()?;
+        let requests = strategy.apply_post_execution_changes(block, total_difficulty, &receipts)?;
 
         state(strategy.state_ref());
 
@@ -335,9 +339,9 @@ where
 
         strategy.with_state_hook(Some(Box::new(state_hook)));
 
-        strategy.apply_pre_execution_changes()?;
+        strategy.apply_pre_execution_changes(block)?;
         let (receipts, gas_used) = strategy.execute_transactions(block, total_difficulty)?;
-        let requests = strategy.apply_post_execution_changes()?;
+        let requests = strategy.apply_post_execution_changes(block, total_difficulty, &receipts)?;
 
         let state = strategy.finish();
 
@@ -529,7 +533,10 @@ mod tests {
     impl<DB> BlockExecutionStrategy<DB> for TestExecutorStrategy<DB, TestEvmConfig> {
         type Error = BlockExecutionError;
 
-        fn apply_pre_execution_changes(&mut self) -> Result<(), Self::Error> {
+        fn apply_pre_execution_changes(
+            &mut self,
+            _block: &BlockWithSenders,
+        ) -> Result<(), Self::Error> {
             Ok(())
         }
 
@@ -541,7 +548,12 @@ mod tests {
             Ok(self.execute_transactions_result.clone())
         }
 
-        fn apply_post_execution_changes(&mut self) -> Result<Vec<Request>, Self::Error> {
+        fn apply_post_execution_changes(
+            &mut self,
+            _block: &BlockWithSenders,
+            _total_difficulty: U256,
+            _receipts: &[Receipt],
+        ) -> Result<Vec<Request>, Self::Error> {
             Ok(self.apply_post_execution_changes_result.clone())
         }
 
