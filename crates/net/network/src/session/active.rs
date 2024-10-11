@@ -268,6 +268,7 @@ impl ActiveSession {
                 self.on_internal_peer_request(req, deadline);
             }
             PeerMessage::SendTransactions(msg) => {
+                trace!(target: "net::session", ?msg, "received send transaction");
                 self.queued_outgoing.push_back(EthBroadcastMessage::Transactions(msg).into());
             }
             PeerMessage::ReceivedTransaction(_) => {
@@ -553,6 +554,7 @@ impl Future for ActiveSession {
             while this.conn.poll_ready_unpin(cx).is_ready() {
                 if let Some(msg) = this.queued_outgoing.pop_front() {
                     progress = true;
+                    trace!(target: "net::session", msg=?msg, "sending message");
                     let res = match msg {
                         OutgoingMessage::Eth(msg) => this.conn.start_send_unpin(msg),
                         OutgoingMessage::Broadcast(msg) => this.conn.start_send_broadcast(msg),
@@ -728,6 +730,7 @@ enum RequestState {
 }
 
 /// Outgoing messages that can be sent over the wire.
+#[derive(Debug)]
 pub(crate) enum OutgoingMessage {
     /// A message that is owned.
     Eth(EthMessage),

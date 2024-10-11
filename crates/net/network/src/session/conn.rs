@@ -14,6 +14,7 @@ use reth_eth_wire::{
     EthMessage, EthStream, EthVersion, P2PStream,
 };
 use tokio::net::TcpStream;
+use tracing::trace;
 
 /// The type of the underlying peer network connection.
 pub type EthPeerConnection = EthStream<P2PStream<ECIESStream<TcpStream>>>;
@@ -80,6 +81,7 @@ impl EthRlpxConnection {
         &mut self,
         item: EthBroadcastMessage,
     ) -> Result<(), EthStreamError> {
+        trace!(target: "net::conn", "Sending broadcast message: {:?} {:?}", self, item);
         match self {
             Self::EthOnly(conn) => conn.start_send_broadcast(item),
             Self::Satellite(conn) => conn.primary_mut().start_send_broadcast(item),
