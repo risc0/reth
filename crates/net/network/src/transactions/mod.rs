@@ -1251,6 +1251,8 @@ where
         let mut poll_durations = TxManagerPollDurations::default();
 
         let this = self.get_mut();
+        
+        trace!(target: "net::tx", "Polling transactions manager");
 
         // All streams are polled until their corresponding budget is exhausted, then we manually
         // yield back control to tokio. See `NetworkManager` for more context on the design
@@ -1378,6 +1380,8 @@ where
 
         this.transaction_fetcher.update_metrics();
 
+        trace!(target: "net::tx", "Polling transactions manager complete");
+
         // all channels are fully drained and import futures pending
         if maybe_more_network_events ||
             maybe_more_commands ||
@@ -1386,6 +1390,7 @@ where
             maybe_more_pool_imports ||
             maybe_more_pending_txns
         {
+            trace!(target: "net::tx", "Polling transactions manager pending more work");
             // make sure we're woken up again
             cx.waker().wake_by_ref();
             return Poll::Pending
