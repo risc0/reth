@@ -8,11 +8,14 @@ pub use reth_execution_types::{BlockExecutionInput, BlockExecutionOutput, Execut
 pub use reth_storage_errors::provider::ProviderError;
 
 use crate::system_calls::OnStateHook;
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use alloy_primitives::BlockNumber;
 use core::{cell::RefCell, fmt::Display, marker::PhantomData};
+use reth_chainspec::ChainSpec;
+use reth_consensus::ConsensusError;
 use reth_primitives::{BlockWithSenders, Receipt, Request};
 use reth_prune_types::PruneModes;
+use reth_revm::batch::BlockBatchRecord;
 use revm::{db::BundleState, State};
 use revm_primitives::{db::Database, U256};
 
@@ -193,11 +196,25 @@ pub trait BlockExecutionStrategy<DB> {
     /// Returns a reference to the current state.
     fn state_ref(&self) -> &State<DB>;
 
+    /// Returns a mutable reference to the current state.
+    fn state_mut(&mut self) -> &mut State<DB>;
+
     /// Sets a hook to be called after each state change during execution.
     fn with_state_hook(&mut self, hook: Option<Box<dyn OnStateHook>>);
 
     /// Returns the final bundle state.
     fn finish(&mut self) -> BundleState;
+
+    /// Returns the strategy chain spec.
+    fn chain_spec(&self) -> Arc<ChainSpec>;
+
+    /// Validate a block with regard to execution results.
+    fn validate_block_post_execution(
+        &self,
+        block: &BlockWithSenders,
+        receipts: &[Receipt],
+        requests: &[Request],
+    ) -> Result<(), ConsensusError>;
 }
 
 /// A strategy factory that can create block execution strategies.
@@ -259,7 +276,8 @@ where
         DB: Database<Error: Into<ProviderError> + Display>,
     {
         let strategy = self.strategy_factory.create_strategy(db);
-        GenericBatchExecutor::new(strategy)
+        let batch_record = BlockBatchRecord::default();
+        GenericBatchExecutor::new(strategy, batch_record)
     }
 }
 
@@ -356,15 +374,22 @@ where
 /// A generic batch executor that uses a [`BlockExecutionStrategy`] to
 /// execute batches.
 #[allow(missing_debug_implementations)]
-pub struct GenericBatchExecutor<S, DB> {
-    _strategy: S,
+pub struct GenericBatchExecutor<S, DB>
+where
+    S: BlockExecutionStrategy<DB>,
+{
+    strategy: RefCell<S>,
+    batch_record: BlockBatchRecord,
     _phantom: PhantomData<DB>,
 }
 
-impl<S, DB> GenericBatchExecutor<S, DB> {
+impl<S, DB> GenericBatchExecutor<S, DB>
+where
+    S: BlockExecutionStrategy<DB>,
+{
     /// Creates a new `GenericBatchExecutor` with the given strategy.
-    pub const fn new(_strategy: S) -> Self {
-        Self { _strategy, _phantom: PhantomData }
+    pub const fn new(strategy: S, batch_record: BlockBatchRecord) -> Self {
+        Self { strategy: RefCell::new(strategy), batch_record, _phantom: PhantomData }
     }
 }
 
@@ -377,24 +402,55 @@ where
     type Output = ExecutionOutcome;
     type Error = BlockExecutionError;
 
-    fn execute_and_verify_one(&mut self, _input: Self::Input<'_>) -> Result<(), Self::Error> {
-        todo!()
+    fn execute_and_verify_one(&mut self, input: Self::Input<'_>) -> Result<(), Self::Error> {
+        let BlockExecutionInput { block, total_difficulty } = input;
+
+        if self.batch_record.first_block().is_none() {
+            self.batch_record.set_first_block(block.number);
+        }
+
+        let mut strategy = self.strategy.borrow_mut();
+
+        strategy.apply_pre_execution_changes(block, total_difficulty)?;
+        let (receipts, _gas_used) = strategy.execute_transactions(block, total_difficulty)?;
+        let requests = strategy.apply_post_execution_changes(block, total_difficulty, &receipts)?;
+
+        strategy.validate_block_post_execution(block, &receipts, &requests)?;
+
+        // prepare the state according to the prune mode
+        let retention = self.batch_record.bundle_retention(block.number);
+        strategy.state_mut().merge_transitions(retention);
+
+        // store receipts in the set
+        self.batch_record.save_receipts(receipts)?;
+
+        // store requests in the set
+        self.batch_record.save_requests(requests);
+
+        Ok(())
     }
 
-    fn finalize(self) -> Self::Output {
-        todo!()
+    fn finalize(mut self) -> Self::Output {
+        let mut strategy = self.strategy.borrow_mut();
+        ExecutionOutcome::new(
+            strategy.state_mut().take_bundle(),
+            self.batch_record.take_receipts(),
+            self.batch_record.first_block().unwrap_or_default(),
+            self.batch_record.take_requests(),
+        )
     }
 
-    fn set_tip(&mut self, _tip: BlockNumber) {
-        todo!()
+    fn set_tip(&mut self, tip: BlockNumber) {
+        self.batch_record.set_tip(tip);
     }
 
-    fn set_prune_modes(&mut self, _prune_modes: PruneModes) {
-        todo!()
+    fn set_prune_modes(&mut self, prune_modes: PruneModes) {
+        self.batch_record.set_prune_modes(prune_modes);
     }
 
     fn size_hint(&self) -> Option<usize> {
-        None
+        let strategy = self.strategy.borrow_mut();
+        Some(strategy.state_ref().bundle_state.size_hint())
     }
 }
 
@@ -566,10 +622,27 @@ mod tests {
             &self.state
         }
 
+        fn state_mut(&mut self) -> &mut State<DB> {
+            &mut self.state
+        }
+
         fn with_state_hook(&mut self, _hook: Option<Box<dyn OnStateHook>>) {}
 
         fn finish(&mut self) -> BundleState {
             self.finish_result.clone()
+        }
+
+        fn chain_spec(&self) -> Arc<ChainSpec> {
+            MAINNET.clone()
+        }
+
+        fn validate_block_post_execution(
+            &self,
+            _block: &BlockWithSenders,
+            _receipts: &[Receipt],
+            _requests: &[Request],
+        ) -> Result<(), ConsensusError> {
+            Ok(())
         }
     }
 

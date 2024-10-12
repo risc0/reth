@@ -4,8 +4,11 @@ use crate::{
     dao_fork::{DAO_HARDFORK_BENEFICIARY, DAO_HARDKFORK_ACCOUNTS},
     EthEvmConfig,
 };
+use alloc::sync::Arc;
 use core::fmt::Display;
 use reth_chainspec::{ChainSpec, EthereumHardfork, EthereumHardforks, MAINNET};
+use reth_consensus::ConsensusError;
+use reth_ethereum_consensus::validate_block_post_execution;
 use reth_evm::{
     execute::{
         BlockExecutionError, BlockExecutionStrategy, BlockExecutionStrategyFactory,
@@ -21,7 +24,6 @@ use reth_revm::{
     Database, DatabaseCommit, Evm, State,
 };
 use revm_primitives::{BlockEnv, CfgEnvWithHandlerCfg, EnvWithHandlerCfg, ResultAndState, U256};
-use std::sync::Arc;
 
 /// Factory for [`EthExecutionStrategy`].
 #[derive(Debug, Clone)]
@@ -247,6 +249,10 @@ where
         &self.state
     }
 
+    fn state_mut(&mut self) -> &mut State<DB> {
+        &mut self.state
+    }
+
     fn with_state_hook(&mut self, hook: Option<Box<dyn OnStateHook>>) {
         self.system_caller.with_state_hook(hook);
     }
@@ -254,6 +260,19 @@ where
     fn finish(&mut self) -> BundleState {
         self.state.merge_transitions(BundleRetention::Reverts);
         self.state.take_bundle()
+    }
+
+    fn chain_spec(&self) -> Arc<ChainSpec> {
+        self.chain_spec.clone()
+    }
+
+    fn validate_block_post_execution(
+        &self,
+        block: &BlockWithSenders,
+        receipts: &[Receipt],
+        requests: &[Request],
+    ) -> Result<(), ConsensusError> {
+        validate_block_post_execution(block, &self.chain_spec.clone(), receipts, requests)
     }
 }
 
