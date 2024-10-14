@@ -365,10 +365,11 @@ mod tests {
 
         let provider = executor_provider(chain_spec);
 
+        let mut executor = provider.batch_executor(StateProviderDatabase::new(&db));
+
         // attempt to execute a block without parent beacon block root, expect err
-        let err = provider
-            .executor(StateProviderDatabase::new(&db))
-            .execute(
+        let err = executor
+            .execute_and_verify_one(
                 (
                     &BlockWithSenders {
                         block: Block {
@@ -398,11 +399,9 @@ mod tests {
         // fix header, set a gas limit
         header.parent_beacon_block_root = Some(B256::with_last_byte(0x69));
 
-        let executor = provider.executor(StateProviderDatabase::new(&db));
-
         // Now execute a block with the fixed header, ensure that it does not fail
         executor
-            .execute(
+            .execute_and_verify_one(
                 (
                     &BlockWithSenders {
                         block: Block {
@@ -432,15 +431,17 @@ mod tests {
         let parent_beacon_block_root_index =
             timestamp_index % history_buffer_length + history_buffer_length;
 
-        let timestamp_storage =
-            executor.state.storage(BEACON_ROOTS_ADDRESS, U256::from(timestamp_index)).unwrap();
+        let timestamp_storage = executor.with_state_mut(|state| {
+            state.storage(BEACON_ROOTS_ADDRESS, U256::from(timestamp_index)).unwrap()
+        });
         assert_eq!(timestamp_storage, U256::from(header.timestamp));
 
         // get parent beacon block root storage and compare
-        let parent_beacon_block_root_storage = executor
-            .state
-            .storage(BEACON_ROOTS_ADDRESS, U256::from(parent_beacon_block_root_index))
-            .expect("storage value should exist");
+        let parent_beacon_block_root_storage = executor.with_state_mut(|state| {
+            state
+                .storage(BEACON_ROOTS_ADDRESS, U256::from(parent_beacon_block_root_index))
+                .expect("storage value should exist")
+        });
         assert_eq!(parent_beacon_block_root_storage, U256::from(0x69));
     }
 
@@ -549,7 +550,8 @@ mod tests {
             );
 
         // ensure that the nonce of the system address account has not changed
-        let nonce = executor.state_mut().basic(SYSTEM_ADDRESS).unwrap().unwrap().nonce;
+        let nonce =
+            executor.with_state_mut(|state| state.basic(SYSTEM_ADDRESS).unwrap().unwrap().nonce);
         assert_eq!(nonce, 0);
     }
 
@@ -607,11 +609,12 @@ mod tests {
 
         // there is no system contract call so there should be NO STORAGE CHANGES
         // this means we'll check the transition state
-        let transition_state = executor
-            .state_mut()
-            .transition_state
-            .take()
-            .expect("the evm should be initialized with bundle updates");
+        let transition_state = executor.with_state_mut(|state| {
+            state
+                .transition_state
+                .take()
+                .expect("the evm should be initialized with bundle updates")
+        });
 
         // assert that it is the default (empty) transition state
         assert_eq!(transition_state, TransitionState::default());
@@ -669,17 +672,15 @@ mod tests {
             timestamp_index % history_buffer_length + history_buffer_length;
 
         // get timestamp storage and compare
-        let timestamp_storage = executor
-            .state_mut()
-            .storage(BEACON_ROOTS_ADDRESS, U256::from(timestamp_index))
-            .unwrap();
+        let timestamp_storage = executor.with_state_mut(|state| {
+            state.storage(BEACON_ROOTS_ADDRESS, U256::from(timestamp_index)).unwrap()
+        });
         assert_eq!(timestamp_storage, U256::from(header.timestamp));
 
         // get parent beacon block root storage and compare
-        let parent_beacon_block_root_storage = executor
-            .state_mut()
-            .storage(BEACON_ROOTS_ADDRESS, U256::from(parent_beacon_block_root_index))
-            .unwrap();
+        let parent_beacon_block_root_storage = executor.with_state_mut(|state| {
+            state.storage(BEACON_ROOTS_ADDRESS, U256::from(parent_beacon_block_root_index)).unwrap()
+        });
         assert_eq!(parent_beacon_block_root_storage, U256::from(0x69));
     }
 
@@ -743,12 +744,11 @@ mod tests {
         //
         // we load the account first, because revm expects it to be
         // loaded
-        executor.state_mut().basic(HISTORY_STORAGE_ADDRESS).unwrap();
-        assert!(executor
-            .state_mut()
+        executor.with_state_mut(|state| state.basic(HISTORY_STORAGE_ADDRESS).unwrap());
+        assert!(executor.with_state_mut(|state| state
             .storage(HISTORY_STORAGE_ADDRESS, U256::ZERO)
             .unwrap()
-            .is_zero());
+            .is_zero()));
     }
 
     #[test]
@@ -787,12 +787,11 @@ mod tests {
         //
         // we load the account first, because revm expects it to be
         // loaded
-        executor.state_mut().basic(HISTORY_STORAGE_ADDRESS).unwrap();
-        assert!(executor
-            .state_mut()
+        executor.with_state_mut(|state| state.basic(HISTORY_STORAGE_ADDRESS).unwrap());
+        assert!(executor.with_state_mut(|state| state
             .storage(HISTORY_STORAGE_ADDRESS, U256::ZERO)
             .unwrap()
-            .is_zero());
+            .is_zero()));
     }
 
     #[test]
@@ -834,21 +833,20 @@ mod tests {
             );
 
         // the hash for the ancestor of the fork activation block should be present
-        assert!(executor.state_mut().basic(HISTORY_STORAGE_ADDRESS).unwrap().is_some());
+        assert!(executor
+            .with_state_mut(|state| state.basic(HISTORY_STORAGE_ADDRESS).unwrap().is_some()));
         assert_ne!(
-            executor
-                .state_mut()
+            executor.with_state_mut(|state| state
                 .storage(HISTORY_STORAGE_ADDRESS, U256::from(fork_activation_block - 1))
-                .unwrap(),
+                .unwrap()),
             U256::ZERO
         );
 
         // the hash of the block itself should not be in storage
-        assert!(executor
-            .state_mut()
+        assert!(executor.with_state_mut(|state| state
             .storage(HISTORY_STORAGE_ADDRESS, U256::from(fork_activation_block))
             .unwrap()
-            .is_zero());
+            .is_zero()));
     }
 
     #[test]
@@ -891,15 +889,15 @@ mod tests {
             );
 
         // the hash for the ancestor of the fork activation block should be present
-        assert!(executor.state_mut().basic(HISTORY_STORAGE_ADDRESS).unwrap().is_some());
+        assert!(executor
+            .with_state_mut(|state| state.basic(HISTORY_STORAGE_ADDRESS).unwrap().is_some()));
         assert_ne!(
-            executor
-                .state_mut()
+            executor.with_state_mut(|state| state
                 .storage(
                     HISTORY_STORAGE_ADDRESS,
                     U256::from(fork_activation_block % BLOCKHASH_SERVE_WINDOW as u64 - 1)
                 )
-                .unwrap(),
+                .unwrap()),
             U256::ZERO
         );
     }
@@ -942,12 +940,11 @@ mod tests {
         //
         // we load the account first, because revm expects it to be
         // loaded
-        executor.state_mut().basic(HISTORY_STORAGE_ADDRESS).unwrap();
-        assert!(executor
-            .state_mut()
+        executor.with_state_mut(|state| state.basic(HISTORY_STORAGE_ADDRESS).unwrap());
+        assert!(executor.with_state_mut(|state| state
             .storage(HISTORY_STORAGE_ADDRESS, U256::ZERO)
             .unwrap()
-            .is_zero());
+            .is_zero()));
 
         // attempt to execute block 1, this should not fail
         let header = Header {
@@ -975,16 +972,18 @@ mod tests {
             );
 
         // the block hash of genesis should now be in storage, but not block 1
-        assert!(executor.state_mut().basic(HISTORY_STORAGE_ADDRESS).unwrap().is_some());
+        assert!(executor
+            .with_state_mut(|state| state.basic(HISTORY_STORAGE_ADDRESS).unwrap().is_some()));
         assert_ne!(
-            executor.state_mut().storage(HISTORY_STORAGE_ADDRESS, U256::ZERO).unwrap(),
+            executor.with_state_mut(|state| state
+                .storage(HISTORY_STORAGE_ADDRESS, U256::ZERO)
+                .unwrap()),
             U256::ZERO
         );
-        assert!(executor
-            .state_mut()
+        assert!(executor.with_state_mut(|state| state
             .storage(HISTORY_STORAGE_ADDRESS, U256::from(1))
             .unwrap()
-            .is_zero());
+            .is_zero()));
 
         // attempt to execute block 2, this should not fail
         let header = Header {
@@ -1011,20 +1010,24 @@ mod tests {
             );
 
         // the block hash of genesis and block 1 should now be in storage, but not block 2
-        assert!(executor.state_mut().basic(HISTORY_STORAGE_ADDRESS).unwrap().is_some());
-        assert_ne!(
-            executor.state_mut().storage(HISTORY_STORAGE_ADDRESS, U256::ZERO).unwrap(),
-            U256::ZERO
-        );
-        assert_ne!(
-            executor.state_mut().storage(HISTORY_STORAGE_ADDRESS, U256::from(1)).unwrap(),
-            U256::ZERO
-        );
         assert!(executor
-            .state_mut()
+            .with_state_mut(|state| state.basic(HISTORY_STORAGE_ADDRESS).unwrap().is_some()));
+        assert_ne!(
+            executor.with_state_mut(|state| state
+                .storage(HISTORY_STORAGE_ADDRESS, U256::ZERO)
+                .unwrap()),
+            U256::ZERO
+        );
+        assert_ne!(
+            executor.with_state_mut(|state| state
+                .storage(HISTORY_STORAGE_ADDRESS, U256::from(1))
+                .unwrap()),
+            U256::ZERO
+        );
+        assert!(executor.with_state_mut(|state| state
             .storage(HISTORY_STORAGE_ADDRESS, U256::from(2))
             .unwrap()
-            .is_zero());
+            .is_zero()));
     }
 
     #[test]

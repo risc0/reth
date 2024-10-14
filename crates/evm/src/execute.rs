@@ -300,6 +300,22 @@ where
     pub const fn new(strategy: S) -> Self {
         Self { strategy: RefCell::new(strategy), _phantom: PhantomData }
     }
+
+    /// Provides safe read access to the state
+    pub fn with_state<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&State<DB>) -> R,
+    {
+        f(self.strategy.borrow().state_ref())
+    }
+
+    /// Provides safe write access to the state
+    pub fn with_state_mut<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut State<DB>) -> R,
+    {
+        f(self.strategy.borrow_mut().state_mut())
+    }
 }
 
 impl<S, DB> Executor<DB> for GenericBlockExecutor<S, DB>
@@ -390,6 +406,22 @@ where
     /// Creates a new `GenericBatchExecutor` with the given strategy.
     pub const fn new(strategy: S, batch_record: BlockBatchRecord) -> Self {
         Self { strategy: RefCell::new(strategy), batch_record, _phantom: PhantomData }
+    }
+
+    /// Provides safe read access to the state
+    pub fn with_state<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&State<DB>) -> R,
+    {
+        f(self.strategy.borrow().state_ref())
+    }
+
+    /// Provides safe write access to the state
+    pub fn with_state_mut<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut State<DB>) -> R,
+    {
+        f(self.strategy.borrow_mut().state_mut())
     }
 }
 
