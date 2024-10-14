@@ -19,6 +19,7 @@ mod implementation;
 pub mod lockfile;
 #[cfg(feature = "mdbx")]
 mod metrics;
+#[cfg(not(target_os = "zkvm"))]
 pub mod static_file;
 pub mod tables;
 #[cfg(feature = "mdbx")]

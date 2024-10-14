@@ -56,7 +56,6 @@ use op_alloy_consensus::TxDeposit;
 use reth_optimism_chainspec::optimism_deposit_tx_signature;
 #[cfg(feature = "optimism")]
 pub use tx_type::DEPOSIT_TX_TYPE_ID;
-#[cfg(any(test, feature = "reth-codec"))]
 use tx_type::{
     COMPACT_EXTENDED_IDENTIFIER_FLAG, COMPACT_IDENTIFIER_EIP1559, COMPACT_IDENTIFIER_EIP2930,
     COMPACT_IDENTIFIER_LEGACY,
@@ -688,7 +687,6 @@ impl Transaction {
     }
 }
 
-#[cfg(any(test, feature = "reth-codec"))]
 impl reth_codecs::Compact for Transaction {
     // Serializes the TxType to the buffer if necessary, returning 2 bits of the type as an
     // identifier instead of the length.
@@ -936,7 +934,6 @@ impl<'a> arbitrary::Arbitrary<'a> for TransactionSignedNoHash {
     }
 }
 
-#[cfg(any(test, feature = "reth-codec"))]
 impl reth_codecs::Compact for TransactionSignedNoHash {
     fn to_compact<B>(&self, buf: &mut B) -> usize
     where
@@ -951,24 +948,7 @@ impl reth_codecs::Compact for TransactionSignedNoHash {
         let sig_bit = self.signature.to_compact(buf) as u8;
         let zstd_bit = self.transaction.input().len() >= 32;
 
-        let tx_bits = if zstd_bit {
-            let mut tmp = Vec::with_capacity(256);
-            if cfg!(feature = "std") {
-                crate::compression::TRANSACTION_COMPRESSOR.with(|compressor| {
-                    let mut compressor = compressor.borrow_mut();
-                    let tx_bits = self.transaction.to_compact(&mut tmp);
-                    buf.put_slice(&compressor.compress(&tmp).expect("Failed to compress"));
-                    tx_bits as u8
-                })
-            } else {
-                let mut compressor = crate::compression::create_tx_compressor();
-                let tx_bits = self.transaction.to_compact(&mut tmp);
-                buf.put_slice(&compressor.compress(&tmp).expect("Failed to compress"));
-                tx_bits as u8
-            }
-        } else {
-            self.transaction.to_compact(buf) as u8
-        };
+        let tx_bits = self.transaction.to_compact(buf) as u8;
 
         // Replace bitflags with the actual values
         buf.as_mut()[start] = sig_bit | (tx_bits << 1) | ((zstd_bit as u8) << 3);
@@ -985,29 +965,8 @@ impl reth_codecs::Compact for TransactionSignedNoHash {
         let sig_bit = bitflags & 1;
         let (mut signature, buf) = Signature::from_compact(buf, sig_bit);
 
-        let zstd_bit = bitflags >> 3;
-        let (transaction, buf) = if zstd_bit != 0 {
-            if cfg!(feature = "std") {
-                crate::compression::TRANSACTION_DECOMPRESSOR.with(|decompressor| {
-                    let mut decompressor = decompressor.borrow_mut();
-
-                    // TODO: enforce that zstd is only present at a "top" level type
-
-                    let transaction_type = (bitflags & 0b110) >> 1;
-                    let (transaction, _) =
-                        Transaction::from_compact(decompressor.decompress(buf), transaction_type);
-
-                    (transaction, buf)
-                })
-            } else {
-                let mut decompressor = crate::compression::create_tx_decompressor();
-                let transaction_type = (bitflags & 0b110) >> 1;
-                let (transaction, _) =
-                    Transaction::from_compact(decompressor.decompress(buf), transaction_type);
-
-                (transaction, buf)
-            }
-        } else {
+        // let zstd_bit = bitflags >> 3;
+        let (transaction, buf) = {
             let transaction_type = bitflags >> 1;
             Transaction::from_compact(buf, transaction_type)
         };

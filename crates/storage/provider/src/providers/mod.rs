@@ -39,7 +39,9 @@ use tracing::trace;
 mod database;
 pub use database::*;
 
+#[cfg(not(target_os = "zkvm"))]
 mod static_file;
+#[cfg(not(target_os = "zkvm"))]
 pub use static_file::{
     StaticFileAccess, StaticFileJarProvider, StaticFileProvider, StaticFileProviderRW,
     StaticFileProviderRWRefMut, StaticFileWriter,

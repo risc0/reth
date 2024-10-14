@@ -1,5 +1,3 @@
-#[cfg(feature = "reth-codec")]
-use crate::compression::{RECEIPT_COMPRESSOR, RECEIPT_DECOMPRESSOR};
 use crate::{
     logs_bloom, TxType, EIP1559_TX_TYPE_ID, EIP2930_TX_TYPE_ID, EIP4844_TX_TYPE_ID,
     EIP7702_TX_TYPE_ID,
@@ -8,17 +6,15 @@ use alloc::{vec, vec::Vec};
 use alloy_primitives::{Bloom, Bytes, Log, B256};
 use alloy_rlp::{length_of_length, Decodable, Encodable, RlpDecodable, RlpEncodable};
 use bytes::{Buf, BufMut};
+use byteorder::{BigEndian, ReadBytesExt};
 use core::{cmp::Ordering, ops::Deref};
 use derive_more::{DerefMut, From, IntoIterator};
-#[cfg(feature = "reth-codec")]
-use reth_codecs::{Compact, CompactZstd};
 use serde::{Deserialize, Serialize};
 
 /// Receipt containing result of transaction execution.
 #[derive(
-    Clone, Debug, PartialEq, Eq, Default, RlpEncodable, RlpDecodable, Serialize, Deserialize,
+    Clone, Debug, PartialEq, Eq, Default, RlpEncodable, RlpDecodable, Serialize, Deserialize
 )]
-#[cfg_attr(any(test, feature = "reth-codec"), derive(CompactZstd))]
 #[cfg_attr(any(test, feature = "reth-codec"), reth_codecs::add_arbitrary_tests)]
 #[rlp(trailing)]
 pub struct Receipt {
@@ -43,6 +39,57 @@ pub struct Receipt {
     /// ensures this is only set for post-Canyon deposit transactions.
     #[cfg(feature = "optimism")]
     pub deposit_receipt_version: Option<u64>,
+}
+
+impl reth_codecs::Compact for Receipt {
+    fn to_compact<B>(&self, buf: &mut B) -> usize
+    where
+        B: BufMut + AsMut<[u8]>
+    {
+        let tx_type = self.tx_type.to_compact(buf);
+        buf.put_u8(self.success as u8);
+        buf.put_u64(self.cumulative_gas_used);
+        self.logs.to_compact(buf);
+        #[cfg(feature = "optimism")]
+        {
+            buf.put_u8(self.deposit_nonce.is_some() as u8);
+            self.deposit_nonce.to_compact(buf);
+            buf.put_u8(self.deposit_receipt_version.is_some() as u8);
+            self.deposit_receipt_version.to_compact(buf);
+        }
+        tx_type
+    }
+
+    fn from_compact(buf: &[u8], identifier: usize) -> (Self, &[u8]) {
+        let (tx_type, mut buf) = TxType::from_compact(buf, identifier);
+        let success = buf.read_u8().expect("could not read success bool") != 0;
+        let cumulative_gas_used = buf.read_u64::<BigEndian>().expect("could not read cumulative_gas_used u64");
+        #[cfg(feature = "optimism")]
+        {
+            let (logs, mut buf) = Vec::<Log>::from_compact(buf, 0);
+            let len = buf.read_u8().expect("could not read deposit_nonce length") as usize;
+            let (deposit_nonce, mut buf) = Option::<u64>::from_compact(buf, len);
+            let len = buf.read_u8().expect("could not read deposit_receipt_version length") as usize;
+            let (deposit_receipt_version, buf) = Option::<u64>::from_compact(buf, len);
+            (
+                Self {
+                    tx_type,
+                    success,
+                    cumulative_gas_used,
+                    logs,
+                    deposit_nonce,
+                    deposit_receipt_version,
+                },
+                buf,
+            )
+        }
+        #[cfg(not(feature = "optimism"))]
+        {
+            let (logs, buf) = Vec::<Log>::from_compact(buf, 0);
+            (Self { tx_type, success, cumulative_gas_used, logs }, buf)
+        }
+
+    }
 }
 
 impl Receipt {
@@ -130,13 +177,28 @@ impl From<Receipt> for ReceiptWithBloom {
 /// [`Receipt`] with calculated bloom filter.
 #[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
-#[cfg_attr(any(test, feature = "reth-codec"), derive(Compact))]
 #[cfg_attr(any(test, feature = "reth-codec"), reth_codecs::add_arbitrary_tests(compact))]
 pub struct ReceiptWithBloom {
     /// Bloom filter build from logs.
     pub bloom: Bloom,
     /// Main receipt body
     pub receipt: Receipt,
+}
+
+impl reth_codecs::Compact for ReceiptWithBloom {
+    fn to_compact<B>(&self, buf: &mut B) -> usize
+    where
+        B: BufMut + AsMut<[u8]>
+    {
+        self.bloom.to_compact(buf);
+        self.receipt.to_compact(buf)
+    }
+
+    fn from_compact(buf: &[u8], identifier: usize) -> (Self, &[u8]) {
+        let (bloom, buf) = Bloom::from_compact(buf, 256);
+        let (receipt, buf) = Receipt::from_compact(buf, identifier);
+        (Self { bloom, receipt }, buf)
+    }
 }
 
 impl ReceiptWithBloom {

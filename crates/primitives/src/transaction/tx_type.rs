@@ -6,21 +6,17 @@ use serde::{Deserialize, Serialize};
 use reth_codecs::Compact;
 
 /// Identifier parameter for legacy transaction
-#[cfg(any(test, feature = "reth-codec"))]
 pub(crate) const COMPACT_IDENTIFIER_LEGACY: usize = 0;
 
 /// Identifier parameter for EIP-2930 transaction
-#[cfg(any(test, feature = "reth-codec"))]
 pub(crate) const COMPACT_IDENTIFIER_EIP2930: usize = 1;
 
 /// Identifier parameter for EIP-1559 transaction
-#[cfg(any(test, feature = "reth-codec"))]
 pub(crate) const COMPACT_IDENTIFIER_EIP1559: usize = 2;
 
 /// For backwards compatibility purposes only 2 bits of the type are encoded in the identifier
 /// parameter. In the case of a [`COMPACT_EXTENDED_IDENTIFIER_FLAG`], the full transaction type is
 /// read from the buffer as a single byte.
-#[cfg(any(test, feature = "reth-codec"))]
 pub(crate) const COMPACT_EXTENDED_IDENTIFIER_FLAG: usize = 3;
 
 /// Identifier for legacy transaction, however [`TxLegacy`](alloy_consensus::TxLegacy) this is
@@ -149,7 +145,6 @@ impl TryFrom<U64> for TxType {
     }
 }
 
-#[cfg(any(test, feature = "reth-codec"))]
 impl reth_codecs::Compact for TxType {
     fn to_compact<B>(&self, buf: &mut B) -> usize
     where
