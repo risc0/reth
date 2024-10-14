@@ -871,7 +871,7 @@ impl<N: ProviderNodeTypes> BlockReader for BlockchainProvider2<N> {
                 stored_indices.tx_count = 0;
 
                 // Iterate from the lowest block in memory until our target block
-                for state in block_state.chain().into_iter().rev() {
+                for state in block_state.chain().collect::<Vec<_>>().into_iter().rev() {
                     let block_tx_count = state.block_ref().block.body.transactions.len() as u64;
                     if state.block_ref().block().number == number {
                         stored_indices.tx_count = block_tx_count;

@@ -4,7 +4,7 @@ use crate::{
     CanonStateNotification, CanonStateNotificationSender, CanonStateNotifications,
     ChainInfoTracker, MemoryOverlayStateProvider,
 };
-use alloy_eips::BlockNumHash;
+use alloy_eips::{BlockHashOrNumber, BlockNumHash};
 use alloy_primitives::{map::HashMap, Address, TxHash, B256};
 use parking_lot::RwLock;
 use reth_chainspec::ChainInfo;
@@ -706,10 +706,8 @@ impl BlockState {
     /// Returns a vector of `BlockStates` representing the entire in memory chain.
     /// The block state order in the output vector is newest to oldest (highest to lowest),
     /// including self as the first element.
-    pub fn chain(&self) -> Vec<&Self> {
-        let mut chain = vec![self];
-        self.append_parent_chain(&mut chain);
-        chain
+    pub fn chain(&self) -> impl Iterator<Item = &Self> {
+        std::iter::successors(Some(self), |state| state.parent.as_deref())
     }
 
     /// Appends the parent chain of this [`BlockState`] to the given vector.
@@ -722,6 +720,55 @@ impl BlockState {
     /// This yields the blocks from newest to oldest (highest to lowest).
     pub fn iter(self: Arc<Self>) -> impl Iterator<Item = Arc<Self>> {
         std::iter::successors(Some(self), |state| state.parent.clone())
+    }
+
+    /// Tries to find a block by [`BlockHashOrNumber`] in the chain ending at this block.
+    pub fn block_on_chain(&self, hash_or_num: BlockHashOrNumber) -> Option<&Self> {
+        self.chain().find(|block| match hash_or_num {
+            BlockHashOrNumber::Hash(hash) => block.hash() == hash,
+            BlockHashOrNumber::Number(number) => block.number() == number,
+        })
+    }
+
+    /// Tries to find a transaction by [`TxHash`] in the chain ending at this block.
+    pub fn transaction_on_chain(&self, hash: TxHash) -> Option<TransactionSigned> {
+        for block_state in self.chain() {
+            if let Some(tx) =
+                block_state.block_ref().block().body.transactions().find(|tx| tx.hash() == hash)
+            {
+                return Some(tx.clone())
+            }
+        }
+        None
+    }
+
+    /// Tries to find a transaction with meta by [`TxHash`] in the chain ending at this block.
+    pub fn transaction_meta_on_chain(
+        &self,
+        tx_hash: TxHash,
+    ) -> Option<(TransactionSigned, TransactionMeta)> {
+        for block_state in self.chain() {
+            if let Some((index, tx)) = block_state
+                .block_ref()
+                .block()
+                .body
+                .transactions()
+                .enumerate()
+                .find(|(_, tx)| tx.hash() == tx_hash)
+            {
+                let meta = TransactionMeta {
+                    tx_hash,
+                    index: index as u64,
+                    block_hash: block_state.hash(),
+                    block_number: block_state.block_ref().block.number,
+                    base_fee: block_state.block_ref().block.header.base_fee_per_gas,
+                    timestamp: block_state.block_ref().block.timestamp,
+                    excess_blob_gas: block_state.block_ref().block.excess_blob_gas,
+                };
+                return Some((tx.clone(), meta))
+            }
+        }
+        None
     }
 }
 

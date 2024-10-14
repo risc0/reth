@@ -61,6 +61,7 @@ pub use consistent_view::{ConsistentDbView, ConsistentViewError};
 mod blockchain_provider;
 pub use blockchain_provider::BlockchainProvider2;
 
+mod blockchain_provider3;
 mod factories;
 
 /// Helper trait keeping common requirements of providers for [`NodeTypesWithDB`].
