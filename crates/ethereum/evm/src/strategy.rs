@@ -279,20 +279,26 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy_consensus::TxLegacy;
+    use alloy_consensus::{TxLegacy, EMPTY_ROOT_HASH};
     use alloy_eips::{
-        eip4788::{BEACON_ROOTS_ADDRESS, BEACON_ROOTS_CODE},
+        eip2935::{HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE},
+        eip4788::{BEACON_ROOTS_ADDRESS, BEACON_ROOTS_CODE, SYSTEM_ADDRESS},
         eip7002::{WITHDRAWAL_REQUEST_PREDEPLOY_ADDRESS, WITHDRAWAL_REQUEST_PREDEPLOY_CODE},
     };
     use alloy_primitives::{b256, fixed_bytes, keccak256, Bytes, TxKind, B256};
     use reth_chainspec::{ChainSpecBuilder, ForkCondition};
-    use reth_evm::execute::{BlockExecutorProvider, Executor, GenericBlockExecutorProvider};
+    use reth_evm::execute::{
+        BatchExecutor, BlockExecutorProvider, Executor, GenericBlockExecutorProvider,
+    };
     use reth_execution_types::BlockExecutionOutput;
     use reth_primitives::{
         constants::ETH_TO_WEI, public_key_to_address, Account, Block, BlockBody, Transaction,
     };
-    use reth_revm::{database::StateProviderDatabase, test_utils::StateProviderTest};
+    use reth_revm::{
+        database::StateProviderDatabase, test_utils::StateProviderTest, TransitionState,
+    };
     use reth_testing_utils::generators::{self, sign_tx_with_key_pair};
+    use revm_primitives::BLOCKHASH_SERVE_WINDOW;
     use secp256k1::{Keypair, Secp256k1};
     use std::collections::HashMap;
 
@@ -423,12 +429,9 @@ mod tests {
         //   // should be parent_beacon_block_root
         let history_buffer_length = 8191u64;
         let timestamp_index = header.timestamp % history_buffer_length;
-        let _parent_beacon_block_root_index =
+        let parent_beacon_block_root_index =
             timestamp_index % history_buffer_length + history_buffer_length;
 
-        // TODO: get timestamp storage and compare
-
-        /*
         let timestamp_storage =
             executor.state.storage(BEACON_ROOTS_ADDRESS, U256::from(timestamp_index)).unwrap();
         assert_eq!(timestamp_storage, U256::from(header.timestamp));
@@ -439,10 +442,8 @@ mod tests {
             .storage(BEACON_ROOTS_ADDRESS, U256::from(parent_beacon_block_root_index))
             .expect("storage value should exist");
         assert_eq!(parent_beacon_block_root_storage, U256::from(0x69));
-        */
     }
 
-    /*
     #[test]
     fn eip_4788_no_code_cancun() {
         // This test ensures that we "silently fail" when cancun is active and there is no code at
@@ -704,50 +705,50 @@ mod tests {
 
         db
     }
-        #[test]
-        fn eip_2935_pre_fork() {
-            let db = create_state_provider_with_block_hashes(1);
+    #[test]
+    fn eip_2935_pre_fork() {
+        let db = create_state_provider_with_block_hashes(1);
 
-            let chain_spec = Arc::new(
-                ChainSpecBuilder::from(&*MAINNET)
-                    .shanghai_activated()
-                    .with_fork(EthereumHardfork::Prague, ForkCondition::Never)
-                    .build(),
+        let chain_spec = Arc::new(
+            ChainSpecBuilder::from(&*MAINNET)
+                .shanghai_activated()
+                .with_fork(EthereumHardfork::Prague, ForkCondition::Never)
+                .build(),
+        );
+
+        let provider = executor_provider(chain_spec);
+        let mut executor = provider.batch_executor(StateProviderDatabase::new(&db));
+
+        // construct the header for block one
+        let header = Header { timestamp: 1, number: 1, ..Header::default() };
+
+        // attempt to execute an empty block, this should not fail
+        executor
+            .execute_and_verify_one(
+                (
+                    &BlockWithSenders {
+                        block: Block { header, body: Default::default() },
+                        senders: vec![],
+                    },
+                    U256::ZERO,
+                )
+                    .into(),
+            )
+            .expect(
+                "Executing a block with no transactions while Prague is active should not fail",
             );
 
-            let provider = executor_provider(chain_spec);
-            let mut executor = provider.batch_executor(StateProviderDatabase::new(&db));
-
-            // construct the header for block one
-            let header = Header { timestamp: 1, number: 1, ..Header::default() };
-
-            // attempt to execute an empty block, this should not fail
-            executor
-                .execute_and_verify_one(
-                    (
-                        &BlockWithSenders {
-                            block: Block { header, body: Default::default() },
-                            senders: vec![],
-                        },
-                        U256::ZERO,
-                    )
-                        .into(),
-                )
-                .expect(
-                    "Executing a block with no transactions while Prague is active should not fail",
-                );
-
-            // ensure that the block hash was *not* written to storage, since this is before the fork
-            // was activated
-            //
-            // we load the account first, because revm expects it to be
-            // loaded
-            executor.state_mut().basic(HISTORY_STORAGE_ADDRESS).unwrap();
-            assert!(executor
-                .state_mut()
-                .storage(HISTORY_STORAGE_ADDRESS, U256::ZERO)
-                .unwrap()
-                .is_zero());
+        // ensure that the block hash was *not* written to storage, since this is before the fork
+        // was activated
+        //
+        // we load the account first, because revm expects it to be
+        // loaded
+        executor.state_mut().basic(HISTORY_STORAGE_ADDRESS).unwrap();
+        assert!(executor
+            .state_mut()
+            .storage(HISTORY_STORAGE_ADDRESS, U256::ZERO)
+            .unwrap()
+            .is_zero());
     }
 
     #[test]
@@ -1025,7 +1026,7 @@ mod tests {
             .unwrap()
             .is_zero());
     }
-     */
+
     #[test]
     fn eip_7002() {
         let chain_spec = Arc::new(
