@@ -1,7 +1,7 @@
 [workspace.package]
 version = "1.1.0"
 edition = "2021"
-rust-version = "1.81"
+rust-version = "1.79"
 license = "MIT OR Apache-2.0"
 homepage = "https://paradigmxyz.github.io/reth"
 repository = "https://github.com/paradigmxyz/reth"
@@ -514,7 +514,7 @@ thiserror-no-std = { version = "2.0.2", default-features = false }
 tracing = "0.1.0"
 tracing-appender = "0.2"
 url = "2.3"
-zstd = "0.13"
+zstd = { version = "0.13", default-features = false, features = ["no_asm"] }
 
 # metrics
 metrics = "0.23.0"

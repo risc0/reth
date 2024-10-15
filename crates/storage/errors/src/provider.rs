@@ -8,6 +8,7 @@ use reth_primitives::{GotExpected, StaticFileSegment, TxHashOrNumber};
 use std::path::PathBuf;
 
 use alloc::{boxed::Box, string::String};
+use std::convert::Infallible;
 
 /// Provider result type.
 pub type ProviderResult<Ok> = Result<Ok, ProviderError>;
@@ -146,6 +147,12 @@ pub enum ProviderError {
     StorageLockError(StorageLockError),
     /// Storage writer error.
     UnifiedStorageWriterError(UnifiedStorageWriterError),
+}
+
+impl From<Infallible> for ProviderError {
+    fn from(_: Infallible) -> Self {
+        unreachable!("Infallible")
+    }
 }
 
 impl From<DatabaseError> for ProviderError {

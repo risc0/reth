@@ -21,7 +21,7 @@ use reth_primitives::{
     constants::MINIMUM_GAS_LIMIT, BlockWithSenders, Header, SealedBlock, SealedHeader,
     EMPTY_OMMER_ROOT_HASH,
 };
-use std::{fmt::Debug, sync::Arc, time::SystemTime};
+use std::{fmt::Debug, sync::Arc};
 
 /// The bound divisor of the gas limit, used in update calculations.
 const GAS_LIMIT_BOUND_DIVISOR: u64 = 1024;
@@ -195,15 +195,20 @@ impl<ChainSpec: Send + Sync + EthChainSpec + EthereumHardforks + Debug> Consensu
             //  * difficulty, mix_hash & nonce aka PoW stuff
             // low priority as syncing is done in reverse order
 
-            // Check if timestamp is in the future. Clock can drift but this can be consensus issue.
-            let present_timestamp =
-                SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+            // The below check is irrelevant for proof generation
+            #[cfg(not(target_os = "zkvm"))]
+            {
+                use std::time::SystemTime;
+                // Check if timestamp is in the future. Clock can drift but this can be consensus issue.
+                let present_timestamp =
+                    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
 
-            if header.exceeds_allowed_future_timestamp(present_timestamp) {
-                return Err(ConsensusError::TimestampIsInFuture {
-                    timestamp: header.timestamp,
-                    present_timestamp,
-                })
+                if header.exceeds_allowed_future_timestamp(present_timestamp) {
+                    return Err(ConsensusError::TimestampIsInFuture {
+                        timestamp: header.timestamp,
+                        present_timestamp,
+                    })
+                }
             }
 
             validate_header_extradata(header)?;
