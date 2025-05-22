@@ -42,8 +42,6 @@ reth-trie.workspace = true
 reth-trie-db.workspace = true
 reth-cli-util.workspace = true
 reth-config.workspace = true
-reth-downloaders.workspace = true
-reth-exex.workspace = true
 reth-network-api.workspace = true
 reth-network-p2p.workspace = true
 reth-node-events.workspace = true
@@ -62,7 +60,6 @@ backon.workspace = true
 similar-asserts.workspace = true
 
 # async
-tokio.workspace = true
 futures.workspace = true
 
 # alloy

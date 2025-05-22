@@ -8,36 +8,25 @@ use reth_chainspec::ChainSpec;
 use reth_cli::chainspec::ChainSpecParser;
 use reth_cli_commands::common::{AccessRights, CliNodeTypes, Environment, EnvironmentArgs};
 use reth_cli_runner::CliContext;
-use reth_cli_util::get_secret_key;
 use reth_config::Config;
 use reth_consensus::FullConsensus;
 use reth_db::DatabaseEnv;
-use reth_downloaders::{
-    bodies::bodies::BodiesDownloaderBuilder,
-    headers::reverse_headers::ReverseHeadersDownloaderBuilder,
-};
 use reth_errors::ConsensusError;
 use reth_ethereum_primitives::EthPrimitives;
-use reth_exex::ExExManagerHandle;
 use reth_network::{BlockDownloaderProvider, NetworkHandle};
-use reth_network_api::NetworkInfo;
 use reth_network_p2p::{headers::client::HeadersClient, EthBlockClient};
 use reth_node_api::NodeTypesWithDBAdapter;
 use reth_node_core::{args::NetworkArgs, utils::get_single_header};
-use reth_node_ethereum::{consensus::EthBeaconConsensus, EthExecutorProvider};
+use reth_node_ethereum::consensus::EthBeaconConsensus;
 use reth_node_events::node::NodeEvent;
 use reth_provider::{
     providers::ProviderNodeTypes, ChainSpecProvider, ProviderFactory, StageCheckpointReader,
 };
 use reth_prune::PruneModes;
-use reth_stages::{
-    sets::DefaultStages, stages::ExecutionStage, ExecutionStageThresholds, Pipeline, StageId,
-    StageSet,
-};
+use reth_stages::{Pipeline, StageId};
 use reth_static_file::StaticFileProducer;
 use reth_tasks::TaskExecutor;
 use std::{path::PathBuf, sync::Arc};
-use tokio::sync::watch;
 use tracing::*;
 
 /// `reth debug execution` command
@@ -62,84 +51,31 @@ pub struct Command<C: ChainSpecParser> {
 impl<C: ChainSpecParser<ChainSpec = ChainSpec>> Command<C> {
     fn build_pipeline<N, Client>(
         &self,
-        config: &Config,
-        client: Client,
-        consensus: Arc<dyn FullConsensus<N::Primitives, Error = ConsensusError>>,
-        provider_factory: ProviderFactory<N>,
-        task_executor: &TaskExecutor,
-        static_file_producer: StaticFileProducer<ProviderFactory<N>>,
+        _config: &Config,
+        _client: Client,
+        _consensus: Arc<dyn FullConsensus<N::Primitives, Error = ConsensusError>>,
+        _provider_factory: ProviderFactory<N>,
+        _task_executor: &TaskExecutor,
+        _static_file_producer: StaticFileProducer<ProviderFactory<N>>,
     ) -> eyre::Result<Pipeline<N>>
     where
         N: ProviderNodeTypes<ChainSpec = C::ChainSpec, Primitives = EthPrimitives>,
         Client: EthBlockClient + 'static,
     {
-        // building network downloaders using the fetch client
-        let header_downloader = ReverseHeadersDownloaderBuilder::new(config.stages.headers)
-            .build(client.clone(), consensus.clone())
-            .into_task_with(task_executor);
-
-        let body_downloader = BodiesDownloaderBuilder::new(config.stages.bodies)
-            .build(client, consensus.clone(), provider_factory.clone())
-            .into_task_with(task_executor);
-
-        let stage_conf = &config.stages;
-        let prune_modes = config.prune.clone().map(|prune| prune.segments).unwrap_or_default();
-
-        let (tip_tx, tip_rx) = watch::channel(B256::ZERO);
-        let executor = EthExecutorProvider::ethereum(provider_factory.chain_spec());
-
-        let pipeline = Pipeline::<N>::builder()
-            .with_tip_sender(tip_tx)
-            .add_stages(
-                DefaultStages::new(
-                    provider_factory.clone(),
-                    tip_rx,
-                    consensus.clone(),
-                    header_downloader,
-                    body_downloader,
-                    executor.clone(),
-                    stage_conf.clone(),
-                    prune_modes,
-                )
-                .set(ExecutionStage::new(
-                    executor,
-                    consensus.clone(),
-                    ExecutionStageThresholds {
-                        max_blocks: None,
-                        max_changes: None,
-                        max_cumulative_gas: None,
-                        max_duration: None,
-                    },
-                    stage_conf.execution_external_clean_threshold(),
-                    ExExManagerHandle::empty(),
-                )),
-            )
-            .build(provider_factory, static_file_producer);
-
-        Ok(pipeline)
+        unimplemented!("Patched out.")
     }
 
     async fn build_network<
         N: CliNodeTypes<ChainSpec = C::ChainSpec, Primitives = EthPrimitives>,
     >(
         &self,
-        config: &Config,
-        task_executor: TaskExecutor,
-        provider_factory: ProviderFactory<NodeTypesWithDBAdapter<N, Arc<DatabaseEnv>>>,
-        network_secret_path: PathBuf,
-        default_peers_path: PathBuf,
+        _config: &Config,
+        _task_executor: TaskExecutor,
+        _provider_factory: ProviderFactory<NodeTypesWithDBAdapter<N, Arc<DatabaseEnv>>>,
+        _network_secret_path: PathBuf,
+        _default_peers_path: PathBuf,
     ) -> eyre::Result<NetworkHandle> {
-        let secret_key = get_secret_key(&network_secret_path)?;
-        let network = self
-            .network
-            .network_config(config, provider_factory.chain_spec(), secret_key, default_peers_path)
-            .with_task_executor(Box::new(task_executor))
-            .build(provider_factory)
-            .start_network()
-            .await?;
-        info!(target: "reth::cli", peer_id = %network.peer_id(), local_addr = %network.local_addr(), "Connected to P2P network");
-        debug!(target: "reth::cli", peer_id = ?network.peer_id(), "Full peer ID");
-        Ok(network)
+        unimplemented!("Patched out.")
     }
 
     async fn fetch_block_hash<Client>(

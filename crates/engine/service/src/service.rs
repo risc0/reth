@@ -1,20 +1,17 @@
 use futures::{Stream, StreamExt};
 use pin_project::pin_project;
-use reth_chainspec::EthChainSpec;
 use reth_consensus::{ConsensusError, FullConsensus};
 use reth_engine_primitives::{BeaconConsensusEngineEvent, BeaconEngineMessage, EngineValidator};
 use reth_engine_tree::{
     backfill::PipelineSync,
     download::BasicBlockDownloader,
-    engine::{EngineApiKind, EngineApiRequest, EngineApiRequestHandler, EngineHandler},
-    persistence::PersistenceHandle,
-    tree::{EngineApiTreeHandler, InvalidBlockHook, TreeConfig},
+    engine::{EngineApiRequest, EngineApiRequestHandler, EngineHandler},
+    tree::{InvalidBlockHook, TreeConfig},
 };
 pub use reth_engine_tree::{
     chain::{ChainEvent, ChainOrchestrator},
     engine::EngineApiEvent,
 };
-use reth_ethereum_primitives::EthPrimitives;
 use reth_evm::ConfigureEvm;
 use reth_network_p2p::BlockClient;
 use reth_node_types::{BlockTy, NodeTypes};
@@ -70,55 +67,27 @@ where
     /// Constructor for `EngineService`.
     #[expect(clippy::too_many_arguments)]
     pub fn new<V, C>(
-        consensus: Arc<dyn FullConsensus<N::Primitives, Error = ConsensusError>>,
-        chain_spec: Arc<N::ChainSpec>,
-        client: Client,
-        incoming_requests: EngineMessageStream<N::Payload>,
-        pipeline: Pipeline<N>,
-        pipeline_task_spawner: Box<dyn TaskSpawner>,
-        provider: ProviderFactory<N>,
-        blockchain_db: BlockchainProvider<N>,
-        pruner: PrunerWithFactory<ProviderFactory<N>>,
-        payload_builder: PayloadBuilderHandle<N::Payload>,
-        payload_validator: V,
-        tree_config: TreeConfig,
-        invalid_block_hook: Box<dyn InvalidBlockHook<N::Primitives>>,
-        sync_metrics_tx: MetricEventsSender,
-        evm_config: C,
+        _consensus: Arc<dyn FullConsensus<N::Primitives, Error = ConsensusError>>,
+        _chain_spec: Arc<N::ChainSpec>,
+        _client: Client,
+        _incoming_requests: EngineMessageStream<N::Payload>,
+        _pipeline: Pipeline<N>,
+        _pipeline_task_spawner: Box<dyn TaskSpawner>,
+        _provider: ProviderFactory<N>,
+        _blockchain_db: BlockchainProvider<N>,
+        _pruner: PrunerWithFactory<ProviderFactory<N>>,
+        _payload_builder: PayloadBuilderHandle<N::Payload>,
+        _payload_validator: V,
+        _tree_config: TreeConfig,
+        _invalid_block_hook: Box<dyn InvalidBlockHook<N::Primitives>>,
+        _sync_metrics_tx: MetricEventsSender,
+        _evm_config: C,
     ) -> Self
     where
         V: EngineValidator<N::Payload, Block = BlockTy<N>>,
         C: ConfigureEvm<Primitives = N::Primitives> + 'static,
     {
-        let engine_kind =
-            if chain_spec.is_optimism() { EngineApiKind::OpStack } else { EngineApiKind::Ethereum };
-
-        let downloader = BasicBlockDownloader::new(client, consensus.clone());
-
-        let persistence_handle =
-            PersistenceHandle::<EthPrimitives>::spawn_service(provider, pruner, sync_metrics_tx);
-
-        let canonical_in_memory_state = blockchain_db.canonical_in_memory_state();
-
-        let (to_tree_tx, from_tree) = EngineApiTreeHandler::<N::Primitives, _, _, _, _>::spawn_new(
-            blockchain_db,
-            consensus,
-            payload_validator,
-            persistence_handle,
-            payload_builder,
-            canonical_in_memory_state,
-            tree_config,
-            invalid_block_hook,
-            engine_kind,
-            evm_config,
-        );
-
-        let engine_handler = EngineApiRequestHandler::new(to_tree_tx, from_tree);
-        let handler = EngineHandler::new(engine_handler, downloader, incoming_requests);
-
-        let backfill_sync = PipelineSync::new(pipeline, pipeline_task_spawner);
-
-        Self { orchestrator: ChainOrchestrator::new(handler, backfill_sync) }
+        unimplemented!("Patched out.")
     }
 
     /// Returns a mutable reference to the orchestrator.

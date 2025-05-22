@@ -6,10 +6,6 @@ use crate::BlockTy;
 use alloy_primitives::{BlockNumber, B256};
 use reth_config::{config::StageConfig, PruneConfig};
 use reth_consensus::{ConsensusError, FullConsensus};
-use reth_downloaders::{
-    bodies::bodies::BodiesDownloaderBuilder,
-    headers::reverse_headers::ReverseHeadersDownloaderBuilder,
-};
 use reth_evm::ConfigureEvm;
 use reth_exex::ExExManagerHandle;
 use reth_network_p2p::{
@@ -26,47 +22,24 @@ use tokio::sync::watch;
 /// Constructs a [Pipeline] that's wired to the network
 #[expect(clippy::too_many_arguments)]
 pub fn build_networked_pipeline<N, Client, Evm>(
-    config: &StageConfig,
-    client: Client,
-    consensus: Arc<dyn FullConsensus<N::Primitives, Error = ConsensusError>>,
-    provider_factory: ProviderFactory<N>,
-    task_executor: &TaskExecutor,
-    metrics_tx: reth_stages::MetricEventsSender,
-    prune_config: Option<PruneConfig>,
-    max_block: Option<BlockNumber>,
-    static_file_producer: StaticFileProducer<ProviderFactory<N>>,
-    evm_config: Evm,
-    exex_manager_handle: ExExManagerHandle<N::Primitives>,
+    _config: &StageConfig,
+    _client: Client,
+    _consensus: Arc<dyn FullConsensus<N::Primitives, Error = ConsensusError>>,
+    _provider_factory: ProviderFactory<N>,
+    _task_executor: &TaskExecutor,
+    _metrics_tx: reth_stages::MetricEventsSender,
+    _prune_config: Option<PruneConfig>,
+    _max_block: Option<BlockNumber>,
+    _static_file_producer: StaticFileProducer<ProviderFactory<N>>,
+    _evm_config: Evm,
+    _exex_manager_handle: ExExManagerHandle<N::Primitives>,
 ) -> eyre::Result<Pipeline<N>>
 where
     N: ProviderNodeTypes,
     Client: BlockClient<Block = BlockTy<N>> + 'static,
     Evm: ConfigureEvm<Primitives = N::Primitives> + 'static,
 {
-    // building network downloaders using the fetch client
-    let header_downloader = ReverseHeadersDownloaderBuilder::new(config.headers)
-        .build(client.clone(), consensus.clone())
-        .into_task_with(task_executor);
-
-    let body_downloader = BodiesDownloaderBuilder::new(config.bodies)
-        .build(client, consensus.clone(), provider_factory.clone())
-        .into_task_with(task_executor);
-
-    let pipeline = build_pipeline(
-        provider_factory,
-        config,
-        header_downloader,
-        body_downloader,
-        consensus,
-        max_block,
-        metrics_tx,
-        prune_config,
-        static_file_producer,
-        evm_config,
-        exex_manager_handle,
-    )?;
-
-    Ok(pipeline)
+    unimplemented!("Patched out.")
 }
 
 /// Builds the [Pipeline] with the given [`ProviderFactory`] and downloaders.
