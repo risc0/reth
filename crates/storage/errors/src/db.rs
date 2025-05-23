@@ -8,6 +8,7 @@ use core::{
     fmt::{Debug, Display},
     str::FromStr,
 };
+use revm_database_interface::DBErrorMarker;
 
 /// Database error type.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -49,6 +50,8 @@ pub enum DatabaseError {
     #[error("{_0}")]
     Other(String),
 }
+
+impl DBErrorMarker for DatabaseError {}
 
 /// Common error struct to propagate implementation-specific error information.
 #[derive(Debug, Clone, PartialEq, Eq, derive_more::Display)]
