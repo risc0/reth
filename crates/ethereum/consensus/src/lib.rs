@@ -152,7 +152,8 @@ where
                 return Err(ConsensusError::TheMergeOmmerRootIsNotEmpty);
             }
         } else {
-            #[cfg(feature = "std")]
+            // The below check is irrelevant for proof generation
+            #[cfg(all(feature = "std", not(target_os = "zkvm")))]
             {
                 let present_timestamp = std::time::SystemTime::now()
                     .duration_since(std::time::SystemTime::UNIX_EPOCH)

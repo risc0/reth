@@ -7,6 +7,7 @@ use reth_primitives_traits::{transaction::signed::RecoveryError, GotExpected};
 use reth_prune_types::PruneSegmentError;
 use reth_static_file_types::StaticFileSegment;
 use revm_database_interface::DBErrorMarker;
+use std::convert::Infallible;
 
 /// Provider result type.
 pub type ProviderResult<Ok> = Result<Ok, ProviderError>;
@@ -238,6 +239,12 @@ pub enum ConsistentViewError {
 impl From<ConsistentViewError> for ProviderError {
     fn from(error: ConsistentViewError) -> Self {
         Self::ConsistentView(Box::new(error))
+    }
+}
+
+impl From<Infallible> for ProviderError {
+    fn from(_: Infallible) -> Self {
+        unreachable!("Infallible")
     }
 }
 
