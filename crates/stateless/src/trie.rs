@@ -6,8 +6,8 @@ use alloy_rpc_types_debug::ExecutionWitness;
 use alloy_trie::{TrieAccount, EMPTY_ROOT_HASH};
 use itertools::Itertools;
 use reth_errors::ProviderError;
-use reth_revm::state::Bytecode;
-use reth_trie_common::{HashedPostState, Nibbles, TRIE_ACCOUNT_RLP_MAX_SIZE};
+use reth_revm::{db::BundleAccount, state::Bytecode};
+use reth_trie_common::{HashedPostState, KeccakKeyHasher, Nibbles, TRIE_ACCOUNT_RLP_MAX_SIZE};
 use reth_trie_sparse::{
     errors::SparseStateTrieResult,
     provider::{DefaultTrieNodeProvider, DefaultTrieNodeProviderFactory},
@@ -37,9 +37,9 @@ pub trait StatelessTrie: core::fmt::Debug {
     fn storage(&self, address: Address, slot: U256) -> Result<U256, ProviderError>;
 
     /// Computes the new state root from the `HashedPostState`.
-    fn calculate_state_root(
+    fn calculate_state_root<'a>(
         &mut self,
-        state: HashedPostState,
+        state: impl IntoIterator<Item = (&'a Address, &'a BundleAccount)>,
     ) -> Result<B256, StatelessValidationError>;
 }
 
@@ -71,7 +71,7 @@ impl StatelessSparseTrie {
 
         if let Some(bytes) = self.inner.get_account_value(&hashed_address) {
             let account = TrieAccount::decode(&mut bytes.as_slice())?;
-            return Ok(Some(account))
+            return Ok(Some(account));
         }
 
         if !self.inner.check_valid_account_witness(hashed_address) {
@@ -92,7 +92,7 @@ impl StatelessSparseTrie {
         let hashed_slot = keccak256(B256::from(slot));
 
         if let Some(raw) = self.inner.get_storage_slot_value(&hashed_address, &hashed_slot) {
-            return Ok(U256::decode(&mut raw.as_slice())?)
+            return Ok(U256::decode(&mut raw.as_slice())?);
         }
 
         // Storage slot value is not present in the trie, validate that the witness is complete.
@@ -120,9 +120,9 @@ impl StatelessSparseTrie {
     }
 
     /// Computes the new state root from the `HashedPostState`.
-    pub fn calculate_state_root(
+    pub fn calculate_state_root<'a>(
         &mut self,
-        state: HashedPostState,
+        state: impl IntoIterator<Item = (&'a Address, &'a BundleAccount)>,
     ) -> Result<B256, StatelessValidationError> {
         calculate_state_root(&mut self.inner, state)
             .map_err(|_e| StatelessValidationError::StatelessStateRootCalculationFailed)
@@ -145,9 +145,9 @@ impl StatelessTrie for StatelessSparseTrie {
         self.storage(address, slot)
     }
 
-    fn calculate_state_root(
+    fn calculate_state_root<'a>(
         &mut self,
-        state: HashedPostState,
+        state: impl IntoIterator<Item = (&'a Address, &'a BundleAccount)>,
     ) -> Result<B256, StatelessValidationError> {
         self.calculate_state_root(state)
     }
@@ -223,10 +223,13 @@ fn verify_execution_witness(
 ///
 /// It modifies the input `trie` in place to reflect these changes and then calculates the
 /// final post-execution state root.
-fn calculate_state_root(
+fn calculate_state_root<'a>(
     trie: &mut SparseStateTrie,
-    state: HashedPostState,
+    state: impl IntoIterator<Item = (&'a Address, &'a BundleAccount)>,
 ) -> SparseStateTrieResult<B256> {
+    // convert into hashed state first
+    let state = HashedPostState::from_bundle_state::<KeccakKeyHasher>(state);
+
     // 1. Apply storage‑slot updates and compute each contract’s storage root
     //
     //

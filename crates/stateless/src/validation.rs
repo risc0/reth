@@ -21,7 +21,6 @@ use reth_ethereum_consensus::{validate_block_post_execution, EthBeaconConsensus}
 use reth_ethereum_primitives::{Block, EthPrimitives};
 use reth_evm::{execute::Executor, ConfigureEvm};
 use reth_primitives_traits::{block::error::BlockRecoveryError, Block as _, RecoveredBlock};
-use reth_trie_common::{HashedPostState, KeccakKeyHasher};
 
 /// Errors that can occur during stateless validation.
 #[derive(Debug, thiserror::Error)]
@@ -214,8 +213,7 @@ where
         .map_err(StatelessValidationError::ConsensusValidationFailed)?;
 
     // Compute and check the post state root
-    let hashed_state = HashedPostState::from_bundle_state::<KeccakKeyHasher>(&output.state.state);
-    let state_root = trie.calculate_state_root(hashed_state)?;
+    let state_root = trie.calculate_state_root(&output.state.state)?;
     if state_root != current_block.state_root {
         return Err(StatelessValidationError::PostStateRootMismatch {
             got: state_root,
